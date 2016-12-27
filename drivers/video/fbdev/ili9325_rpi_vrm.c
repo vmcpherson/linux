@@ -131,8 +131,6 @@ static inline void ili9325_set_output(int gpio)
 	writel(v, __io_address(GPIO_BASE+GPIO_ALT_OFFSET(gpio)));
 }
 
-
-
 static inline void ili9325_writeword(unsigned int data, int rs)
 {
 	unsigned int set=0;
@@ -297,11 +295,10 @@ static void ili9325_update(struct fb_info *info, struct list_head *pagelist)
 			ili9325_copy(item, i);
 		}
 	}
-
 }
 
 
-static void __init ili9325_setup(struct ili9325 *item)
+static void ili9325_setup(struct ili9325 *item)
 {
 	/*
 	WARNING: This init-sequence is partially derived from example code, partially
@@ -430,7 +427,7 @@ static void __init ili9325_setup(struct ili9325 *item)
 //This routine will allocate the buffer for the complete framebuffer. This
 //is one continuous chunk of 16-bit pixel values; userspace programs
 //will write here.
-static int __init ili9325_video_alloc(struct ili9325 *item)
+static int ili9325_video_alloc(struct ili9325 *item)
 {
 	unsigned int frame_size;
 
@@ -463,13 +460,13 @@ static void ili9325_video_free(struct ili9325 *item)
 {
 	dev_dbg(item->dev, "%s: item=0x%p\n", __func__, (void *)item);
 
-	kfree((void *)item->info->fix.smem_start);
+	vfree((void *)item->info->fix.smem_start);
 }
 
 //This routine will allocate a ili9325_page struct for each vm page in the
 //main framebuffer memory. Each struct will contain a pointer to the page
 //start, an x- and y-offset, and the length of the pagebuffer which is in the framebuffer.
-static int __init ili9325_pages_alloc(struct ili9325 *item)
+static int ili9325_pages_alloc(struct ili9325 *item)
 {
 	unsigned short pixels_per_page;
 	unsigned short yoffset_per_page;
@@ -661,7 +658,7 @@ static struct fb_ops ili9325_fbops = {
 	.fb_blank	= ili9325_blank,
 };
 
-static struct fb_fix_screeninfo ili9325_fix __initdata = {
+static struct fb_fix_screeninfo ili9325_fix = {
 	.id          = "ILI9325",
 	.type        = FB_TYPE_PACKED_PIXELS,
 	.visual      = FB_VISUAL_TRUECOLOR,
@@ -669,7 +666,7 @@ static struct fb_fix_screeninfo ili9325_fix __initdata = {
 	.line_length = 320 * 2,
 };
 
-static struct fb_var_screeninfo ili9325_var __initdata = {
+static struct fb_var_screeninfo ili9325_var = {
 	.xres		= 320,
 	.yres		= 240,
 	.xres_virtual	= 320,
@@ -689,12 +686,12 @@ static struct fb_deferred_io ili9325_defio = {
         .deferred_io    = &ili9325_update,
 };
 
-static int __init ili9325_probe(struct platform_device *dev)
+static int ili9325_probe(struct platform_device *dev)
 {
 	int ret = 0;
 	struct ili9325 *item;
 	struct fb_info *info;
-
+    
 	dev_dbg(&dev->dev, "%s\n", __func__);
 
 	item = kzalloc(sizeof(struct ili9325), GFP_KERNEL);
@@ -771,18 +768,19 @@ out:
 
 static int ili9325_remove(struct platform_device *dev)
 {
-	struct fb_info *info = dev_get_drvdata(&dev->dev);
-	struct ili9325 *item = (struct ili9325 *)info->par;
-	unregister_framebuffer(info);
-	ili9325_pages_free(item);
-	ili9325_video_free(item);
+	struct ili9325 *item = (struct ili9325 *)dev_get_drvdata(&dev->dev);
+	struct fb_info *info = item->info;
+
+	unregister_framebuffer(info);    
+    ili9325_pages_free(item);
+    ili9325_video_free(item);
 	framebuffer_release(info);
 	kfree(item);
-	return 0;
+
+    return 0;
 }
 
-#ifdef CONFIG_PM
-static int ili9325_suspend(struct platform_device *dev, pm_message_t state)
+static int ili9325_suspend(struct device *dev)
 {
 //	struct fb_info *info = dev_get_drvdata(&spi->dev);
 //	struct ili9325 *item = (struct ili9325 *)info->par;
@@ -791,7 +789,7 @@ static int ili9325_suspend(struct platform_device *dev, pm_message_t state)
 	return 0;
 }
 
-static int ili9325_resume(struct platform_device *dev)
+static int ili9325_resume(struct device *dev)
 {
 //	struct fb_info *info = dev_get_drvdata(&spi->dev);
 //	struct ili9325 *item = (struct ili9325 *)info->par;
@@ -799,36 +797,61 @@ static int ili9325_resume(struct platform_device *dev)
 //	ili9325_reg_set(item, ILI9325_REG_SLEEP_MODE, 0x0000);
 	return 0;
 }
-#else
-#define ili9325_suspend NULL
-#define ili9325_resume NULL
-#endif
+
+
+static void ili9325_release(struct device *dev)
+{
+}
+
+static const struct dev_pm_ops ili9325_dev_pm_ops = {
+	.suspend	= ili9325_suspend,
+	.resume		= ili9325_resume,
+};
 
 static struct platform_driver ili9325_driver = {
 	.probe = ili9325_probe,
+    .remove = ili9325_remove,
 	.driver = {
-		   .name = "ili9325",
-		   },
+		.name = "ili9325_vrm_pi",
+		.pm	= &ili9325_dev_pm_ops,
+    },
 };
+
+
+static struct platform_device ili9325_device = {
+	.name	= "ili9325_vrm_pi",
+	.id	= -1,
+	.dev = {
+		.release = ili9325_release,
+	},
+};
+
 
 static int __init ili9325_init(void)
 {
 	int ret = 0;
-
+    
 	pr_debug("%s\n", __func__);
 
 	ret = platform_driver_register(&ili9325_driver);
-	if (ret) {
-		pr_err("%s: unable to platform_driver_register\n", __func__);
-	}
-
+	if (!ret) {
+        ret = platform_device_register(&ili9325_device);
+        if (ret) {
+			platform_driver_unregister(&ili9325_driver);
+        }
+    }
 	return ret;
 }
 
+static void __exit ili9325_exit(void)
+{
+    platform_device_unregister(&ili9325_device);
+	platform_driver_unregister(&ili9325_driver);
+}
+
 module_init(ili9325_init);
-module_exit(ili9325_remove);
+module_exit(ili9325_exit);
 
-
-MODULE_DESCRIPTION("ILI9325 LCD Driver for VRM");
+MODULE_DESCRIPTION("ILI9325 LCD Driver for Raspberry Pi - Custom Board)");
 MODULE_AUTHOR("Vaughan McPherson <vmcpherson@gmail.com>");
 MODULE_LICENSE("GPL");
