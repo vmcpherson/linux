@@ -228,6 +228,19 @@ config FB_TILEBLITTING
 comment "Frame buffer hardware drivers"
 	depends on FB
 
+config FB_ILI9325_RPI_VRM
+	tristate "ILI9325 connected to Raspberry Pi GPIO for VRM's prototype board support"
+	depends on FB
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	select FB_SYS_FOPS
+	select FB_DEFERRED_IO
+	help
+	  This driver implements a framebuffer on an LCD controlled by a
+	  ILI9325 (or compatible) controller connected to the GPIO of the 
+	  Raspberry Pi using VRM's prototype board.
+
 config FB_BCM2708
 	tristate "BCM2708 framebuffer support"
 	depends on FB && RASPBERRYPI_FIRMWARE
